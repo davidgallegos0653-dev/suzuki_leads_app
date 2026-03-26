@@ -65,11 +65,15 @@ MODEL_MAP_META = {
 }
 
 MODEL_MAP_LANDING = {
+    'JIMNY 5DOOR': 'Jimny 5D',
+    'JIMNY-5DOOR': 'Jimny 5D',
+    'JIMNY 5DOOR-COTIZACION': 'Jimny 5D',
+    'JIMNY-5DOOR-COTIZACION': 'Jimny 5D',
+    'JIMNY 5D': 'Jimny 5D',
+    'JIMNY5D-COTIZACION': 'Jimny 5D',
     'Jimny': 'Jimny 3D',
     'JIMNY': 'Jimny 3D',
     'JIMNY-COTIZACION': 'Jimny 3D',
-    'JIMNY 5D': 'Jimny 5D',
-    'JIMNY5D-COTIZACION': 'Jimny 5D',
     'SWIFT': 'Swift',
     'SWIFT-COTIZACION': 'Swift',
     'FRONX': 'Fronx',
