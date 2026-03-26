@@ -1,4 +1,4 @@
-"""Suzuki Leads Report - BI Dashboard. Full-width, no sidebar."""
+"""Suzuki Leads Report - BI Dashboard with Admin/Viewer modes."""
 
 import json, os, base64
 import streamlit as st
@@ -18,8 +18,12 @@ from config import (
 DATA_DIR = os.path.join(os.path.dirname(__file__), '.app_data')
 os.makedirs(DATA_DIR, exist_ok=True)
 LOGO_PATH = os.path.join(os.path.dirname(__file__), 'assets', 'logo.png')
+ADMIN_KEY = 'suzuki'
 
 st.set_page_config(page_title="Suzuki Leads Report", page_icon="🏍️", layout="wide", initial_sidebar_state="collapsed")
+
+# ── Check admin mode ──
+is_admin = st.query_params.get('admin', '') == ADMIN_KEY
 
 def get_logo_b64():
     if os.path.exists(LOGO_PATH):
@@ -32,9 +36,9 @@ def save_json(key, obj):
         json.dump(obj, f)
 
 def load_json(key, default=None):
-    p = os.path.join(DATA_DIR, f'{key}.json')
-    if os.path.exists(p):
-        with open(p) as f:
+    fp = os.path.join(DATA_DIR, f'{key}.json')
+    if os.path.exists(fp):
+        with open(fp) as f:
             return json.load(f)
     return default
 
@@ -57,34 +61,55 @@ def pc_bg(pct_val):
     return '#fef2f2'
 
 def rc(pct_val):
-    """Return CSS class for report tables: green >=80, yellow 50-79, red <50."""
     if pct_val >= 80: return 'rpt-good'
     if pct_val >= 50: return 'rpt-warn'
     return 'rpt-bad'
 
 logo_b64 = get_logo_b64()
 
-# ── Global CSS ──
+# ── Global CSS — Force white background everywhere including mobile ──
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 * { font-family: 'Inter', sans-serif; }
 
-/* Hide sidebar completely */
-section[data-testid="stSidebar"] { display: none; }
-button[data-testid="stSidebarCollapsedControl"] { display: none; }
-header[data-testid="stHeader"] { display: none; }
+/* Force white theme everywhere */
+html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"],
+.main, .stApp, [data-testid="stAppViewBlockContainer"] {
+    background-color: #ffffff !important;
+    color: #0f172a !important;
+}
+[data-testid="stAppViewContainer"] > section > div { background: #ffffff !important; }
 
-.main .block-container { padding: 16px 32px; max-width: 1400px; }
+/* Force white on dark mode / mobile */
+@media (prefers-color-scheme: dark) {
+    html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"],
+    .main, .stApp { background-color: #ffffff !important; color: #0f172a !important; }
+    [data-testid="stMarkdownContainer"] p, [data-testid="stMarkdownContainer"] span,
+    [data-testid="stMarkdownContainer"] div { color: #0f172a !important; }
+}
+
+/* Hide sidebar + header */
+section[data-testid="stSidebar"] { display: none !important; }
+button[data-testid="stSidebarCollapsedControl"] { display: none !important; }
+header[data-testid="stHeader"] { display: none !important; }
+
+.main .block-container { padding: 12px 24px; max-width: 1400px; }
 
 /* Top bar */
 .topbar {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 12px 0; margin-bottom: 6px; border-bottom: 1px solid #eef0f4;
+    padding: 10px 0; margin-bottom: 4px; border-bottom: 1px solid #eef0f4;
 }
-.topbar-logo img { height: 52px; }
-.topbar-right { display: flex; align-items: center; gap: 16px; }
-.topbar-date { font-size: 12px; color: #8492a6; font-weight: 500; }
+.topbar-logo img { height: 48px; }
+.topbar-right { display: flex; align-items: center; gap: 12px; }
+.topbar-date { font-size: 11px; color: #8492a6; font-weight: 500; }
+.topbar-badge {
+    font-size: 9px; font-weight: 700; padding: 3px 10px; border-radius: 12px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+}
+.badge-admin { background: #ede9fe; color: #6d28d9; }
+.badge-viewer { background: #f0fdf4; color: #0e7a3a; }
 
 /* Tabs */
 .stTabs [data-baseweb="tab-list"] {
@@ -92,112 +117,152 @@ header[data-testid="stHeader"] { display: none; }
     border: 1px solid #eef0f4;
 }
 .stTabs [data-baseweb="tab"] {
-    border-radius: 8px; font-size: 13px; font-weight: 600; padding: 8px 20px;
+    border-radius: 8px; font-size: 13px; font-weight: 600; padding: 8px 18px;
     color: #5a6a7e;
 }
 .stTabs [data-baseweb="tab"][aria-selected="true"] {
     background: white; color: #003399; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
-.stTabs [data-baseweb="tab-panel"] { padding-top: 16px; }
+.stTabs [data-baseweb="tab-panel"] { padding-top: 14px; }
 
 /* KPI row */
-.kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+.kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
 .kpi-card {
     background: white; border: 1px solid #eef0f4; border-radius: 12px;
-    padding: 20px; position: relative;
+    padding: 18px; position: relative;
 }
-.kpi-label { font-size: 11px; color: #8492a6; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-.kpi-value { font-size: 36px; font-weight: 900; color: #0f172a; margin: 6px 0 4px; line-height: 1; }
-.kpi-sub { font-size: 12px; color: #64748b; }
+.kpi-label { font-size: 10px; color: #8492a6; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+.kpi-value { font-size: 32px; font-weight: 900; color: #0f172a; margin: 4px 0 2px; line-height: 1; }
+.kpi-sub { font-size: 11px; color: #64748b; }
 .kpi-badge {
-    position: absolute; top: 16px; right: 16px;
-    font-size: 13px; font-weight: 700; padding: 4px 12px; border-radius: 20px;
+    position: absolute; top: 14px; right: 14px;
+    font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 16px;
 }
-.kpi-prog { height: 4px; background: #f1f5f9; border-radius: 4px; margin-top: 10px; overflow: hidden; }
+.kpi-prog { height: 4px; background: #f1f5f9; border-radius: 4px; margin-top: 8px; overflow: hidden; }
 .kpi-prog-fill { height: 100%; border-radius: 4px; }
 
 /* Section */
-.sec { margin: 24px 0 12px; font-size: 13px; font-weight: 700; color: #003399; letter-spacing: 0.3px; }
+.sec { margin: 20px 0 10px; font-size: 12px; font-weight: 700; color: #003399; letter-spacing: 0.3px; }
 
 /* Mini cards */
 .mcards { display: grid; gap: 10px; }
 .mcards-6 { grid-template-columns: repeat(6, 1fr); }
 .mc {
     background: white; border: 1px solid #eef0f4; border-radius: 10px;
-    padding: 16px 12px; text-align: center; transition: all 0.15s;
+    padding: 14px 10px; text-align: center; transition: all 0.15s;
 }
 .mc:hover { border-color: #c7d2e0; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
-.mc-name { font-size: 10px; color: #8492a6; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; }
-.mc-val { font-size: 26px; font-weight: 900; color: #0f172a; margin: 4px 0 2px; }
-.mc-obj { font-size: 10px; color: #94a3b8; }
-.mc-pct { font-size: 14px; font-weight: 800; margin-top: 4px; }
-.mc-bar { height: 3px; background: #f1f5f9; border-radius: 3px; margin-top: 6px; overflow: hidden; }
+.mc-name { font-size: 9px; color: #8492a6; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; }
+.mc-val { font-size: 24px; font-weight: 900; color: #0f172a; margin: 3px 0 2px; }
+.mc-obj { font-size: 9px; color: #94a3b8; }
+.mc-pct { font-size: 13px; font-weight: 800; margin-top: 3px; }
+.mc-bar { height: 3px; background: #f1f5f9; border-radius: 3px; margin-top: 5px; overflow: hidden; }
 .mc-bar-fill { height: 100%; border-radius: 3px; }
-.mc-prev { font-size: 9px; color: #94a3b8; margin-top: 6px; }
+.mc-prev { font-size: 8px; color: #94a3b8; margin-top: 5px; }
 
 /* Config panels */
 .cfg-box {
     background: white; border: 1px solid #eef0f4; border-radius: 12px;
-    padding: 20px; margin-bottom: 14px;
+    padding: 18px; margin-bottom: 12px;
 }
-.cfg-title { font-size: 13px; font-weight: 700; color: #1e293b; margin-bottom: 14px; }
+.cfg-title { font-size: 12px; font-weight: 700; color: #1e293b; margin-bottom: 12px; }
 
 /* Upload zone */
 .upload-zone {
     background: white; border: 2px dashed #d1d9e6; border-radius: 14px;
-    padding: 30px; text-align: center; margin-bottom: 14px;
+    padding: 24px; text-align: center; margin-bottom: 12px;
 }
 .upload-zone:hover { border-color: #003399; }
-.upload-title { font-size: 15px; font-weight: 700; color: #1e293b; margin-bottom: 4px; }
-.upload-sub { font-size: 12px; color: #8492a6; }
+.upload-title { font-size: 14px; font-weight: 700; color: #1e293b; margin-bottom: 3px; }
+.upload-sub { font-size: 11px; color: #8492a6; }
 
-/* Report tab */
+/* Report styles */
 .rpt-header {
-    background: #003399; color: white; padding: 14px 28px; border-radius: 10px;
+    background: #003399; color: white; padding: 12px 24px; border-radius: 10px;
     display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 20px;
+    margin-bottom: 18px;
 }
-.rpt-header h2 { margin: 0; font-size: 17px; font-weight: 800; }
+.rpt-header h2 { margin: 0; font-size: 15px; font-weight: 800; color: white !important; }
 .rpt-header img { height: 28px; }
 
-.rpt-section { margin: 18px 0 8px; font-size: 12px; font-weight: 700; color: #003399;
+.rpt-section { margin: 16px 0 6px; font-size: 11px; font-weight: 700; color: #003399;
     text-transform: uppercase; letter-spacing: 0.8px; }
 
-.rpt-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 16px; }
+.rpt-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 14px; }
 .rpt-table th {
-    background: #003399; color: white; padding: 6px 10px; text-align: center;
-    font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px;
+    background: #003399; color: white !important; padding: 5px 8px; text-align: center;
+    font-weight: 600; font-size: 9px; text-transform: uppercase; letter-spacing: 0.3px;
 }
-.rpt-table td { padding: 5px 10px; border-bottom: 1px solid #eef0f4; text-align: center; }
+.rpt-table td { padding: 4px 8px; border-bottom: 1px solid #eef0f4; text-align: center; color: #0f172a !important; }
 .rpt-table tr:hover td { background: #f8fafc; }
-.rpt-table .row-label { text-align: left; font-weight: 600; color: #003399; }
+.rpt-table .row-label { text-align: left; font-weight: 600; color: #003399 !important; }
 .rpt-table .total-row td { background: #f8fafc; font-weight: 700; border-top: 2px solid #003399; }
-.rpt-good { color: #0e7a3a; font-weight: 700; }
-.rpt-warn { color: #c27803; font-weight: 700; }
-.rpt-bad { color: #c81e1e; font-weight: 700; }
-.rpt-neutral { color: #64748b; }
+.rpt-good { color: #0e7a3a !important; font-weight: 700; }
+.rpt-warn { color: #c27803 !important; font-weight: 700; }
+.rpt-bad { color: #c81e1e !important; font-weight: 700; }
+.rpt-neutral { color: #64748b !important; }
 
 /* Published pill */
 .pill {
-    font-size: 11px; font-weight: 600; padding: 4px 14px; border-radius: 20px;
-    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 10px; font-weight: 600; padding: 3px 12px; border-radius: 16px;
+    display: inline-flex; align-items: center; gap: 4px;
 }
 .pill-green { background: #f0fdf4; color: #0e7a3a; border: 1px solid #bbf7d0; }
+.pill-amber { background: #fffbeb; color: #c27803; border: 1px solid #fde68a; }
 
 /* Footer */
-.foot { text-align: center; color: #94a3b8; font-size: 10px; padding: 16px 0; border-top: 1px solid #f1f5f9; margin-top: 30px; }
+.foot { text-align: center; color: #94a3b8; font-size: 9px; padding: 14px 0; border-top: 1px solid #f1f5f9; margin-top: 24px; }
+
+/* No-data */
+.no-data {
+    text-align: center; padding: 60px 20px; color: #94a3b8;
+    border: 2px dashed #eef0f4; border-radius: 16px; margin: 30px 0;
+}
+.no-data h3 { color: #64748b; margin-bottom: 6px; }
 
 /* Streamlit overrides */
 div[data-testid="stDataFrame"] { border-radius: 10px; overflow: hidden; border: 1px solid #eef0f4; }
 .stDownloadButton button { border-radius: 8px; }
+
+/* Status box */
+.status-box {
+    background: white; border: 1px solid #eef0f4; border-radius: 12px;
+    padding: 20px; margin: 14px 0; text-align: center;
+}
+.status-title { font-size: 11px; color: #94a3b8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+.status-info { font-size: 14px; color: #1e293b; font-weight: 700; }
+
+/* ═══ MOBILE RESPONSIVE ═══ */
+@media (max-width: 768px) {
+    .main .block-container { padding: 8px 12px; }
+    .topbar { padding: 8px 0; }
+    .topbar-logo img { height: 36px; }
+    .kpi-row { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .kpi-value { font-size: 24px; }
+    .kpi-card { padding: 12px; }
+    .mcards-6 { grid-template-columns: repeat(2, 1fr); }
+    .mc-val { font-size: 20px; }
+    .rpt-header { padding: 10px 14px; flex-direction: column; gap: 6px; }
+    .rpt-header h2 { font-size: 12px; text-align: center; }
+    .rpt-table { font-size: 9px; }
+    .rpt-table th { font-size: 8px; padding: 3px 4px; }
+    .rpt-table td { padding: 3px 4px; }
+    .stTabs [data-baseweb="tab"] { font-size: 11px; padding: 6px 10px; }
+}
+@media (max-width: 480px) {
+    .kpi-row { grid-template-columns: 1fr; }
+    .mcards-6 { grid-template-columns: repeat(2, 1fr); }
+}
 </style>
 """, unsafe_allow_html=True)
 
 # ── Top bar ──
 logo_img = f'<img src="data:image/png;base64,{logo_b64}">' if logo_b64 else '<span style="font-weight:900;color:#003399;font-size:18px;">SUZUKI</span>'
+badge = '<span class="topbar-badge badge-admin">Admin</span>' if is_admin else ''
 st.markdown(f"""<div class="topbar">
     <div class="topbar-logo">{logo_img}</div>
     <div class="topbar-right">
+        {badge}
         <span class="topbar-date">{datetime.now().strftime('%d %b %Y')}</span>
     </div>
 </div>""", unsafe_allow_html=True)
@@ -205,6 +270,7 @@ st.markdown(f"""<div class="topbar">
 # ── Load persisted state ──
 data = load_json('current_report')
 prev_data = load_json('prev_month')
+published = load_json('published_state', {})
 objetivos = load_json('objetivos', {
     'total': DEFAULT_OBJETIVO_TOTAL, 'propio': DEFAULT_OBJETIVO_PROPIO,
     'tercero': DEFAULT_OBJETIVO_TERCERO, 'total_prev': 3239,
@@ -213,23 +279,44 @@ objetivos = load_json('objetivos', {
 })
 
 now = datetime.now()
+is_published = published.get('is_published', False)
 
-# ── Tabs ──
-tabs = st.tabs(["📂  Cargar Datos", "🎯  Objetivos", "📊  Dashboard", "📄  Reporte"])
+# ── Tabs based on role ──
+if is_admin:
+    tabs = st.tabs(["📂  Cargar Datos", "🎯  Objetivos", "📊  Dashboard", "📄  Reporte"])
+    tab_upload, tab_obj, tab_dash, tab_report = tabs
+else:
+    tabs = st.tabs(["📊  Dashboard", "📄  Reporte"])
+    tab_dash, tab_report = tabs
+    tab_upload = tab_obj = None
 
 
 # ══════════════════════════════════════════
-# TAB: CARGAR DATOS
+# TAB: CARGAR DATOS (Admin only)
 # ══════════════════════════════════════════
-with tabs[0]:
-    st.markdown('<p style="color:#64748b;font-size:13px;margin-bottom:20px;">Sube los archivos para el mes actual y opcionalmente del mes anterior para comparación automática.</p>', unsafe_allow_html=True)
+if tab_upload is not None:
+  with tab_upload:
+    # Show current publish status
+    if is_published:
+        st.markdown(f"""<div class="status-box">
+            <div class="status-title">Estado del Reporte</div>
+            <div class="status-info"><span class="pill pill-green">● Publicado — {published.get('timestamp','')}</span></div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:6px;">{MESES.get(published.get('mes',0),'')} {published.get('anio','')} — Corte día {published.get('dia_corte','')}</div>
+        </div>""", unsafe_allow_html=True)
+    else:
+        st.markdown("""<div class="status-box">
+            <div class="status-title">Estado del Reporte</div>
+            <div class="status-info"><span class="pill pill-amber">⏳ Sin publicar — Los viewers no ven datos aún</span></div>
+        </div>""", unsafe_allow_html=True)
+
+    st.markdown('<p style="color:#64748b;font-size:12px;margin-bottom:16px;">Sube los archivos, revisa los datos y publica para que el equipo pueda verlos.</p>', unsafe_allow_html=True)
 
     c1, c2 = st.columns([1, 1], gap="large")
 
     with c1:
         st.markdown("""<div class="upload-zone">
             <div class="upload-title">📊 Mes Actual</div>
-            <div class="upload-sub">Sube los dos archivos del mes en curso</div>
+            <div class="upload-sub">Archivos del período en curso</div>
         </div>""", unsafe_allow_html=True)
 
         mes = st.selectbox("Mes", range(1, 13), index=now.month - 1, format_func=lambda x: MESES[x], key="mes_act")
@@ -243,7 +330,7 @@ with tabs[0]:
     with c2:
         st.markdown("""<div class="upload-zone">
             <div class="upload-title">📅 Mes Anterior</div>
-            <div class="upload-sub">Opcional — mismos archivos del mes pasado para comparar</div>
+            <div class="upload-sub">Opcional — para comparación automática</div>
         </div>""", unsafe_allow_html=True)
 
         prev_mes = st.selectbox("Mes anterior", range(1, 13),
@@ -256,47 +343,67 @@ with tabs[0]:
 
     can_process = file_reporte and file_data
 
-    if can_process:
-        if st.button("🚀  Procesar y Publicar Reporte", type="primary", use_container_width=True):
-            with st.spinner("Procesando datos del mes actual..."):
-                try:
-                    result = process_all_data(file_reporte, file_data)
-                    result['dia_corte'] = dia_corte
-                    result['mes'] = mes
-                    result['anio'] = anio
-                    result['timestamp'] = datetime.now().strftime('%d/%m/%Y %H:%M')
-                    save_json('current_report', result)
-                    data = result
+    col_proc, col_pub = st.columns([1, 1])
 
-                    # Process previous month if available
-                    if file_prev_reporte and file_prev_data:
-                        with st.spinner("Procesando mes anterior..."):
+    with col_proc:
+        if can_process:
+            if st.button("⚙️  Procesar Datos (vista previa)", type="secondary", use_container_width=True):
+                with st.spinner("Procesando datos..."):
+                    try:
+                        result = process_all_data(file_reporte, file_data)
+                        result['dia_corte'] = dia_corte
+                        result['mes'] = mes
+                        result['anio'] = anio
+                        result['timestamp'] = datetime.now().strftime('%d/%m/%Y %H:%M')
+                        save_json('current_report', result)
+                        data = result
+
+                        if file_prev_reporte and file_prev_data:
                             prev_result = process_all_data(file_prev_reporte, file_prev_data)
                             prev_result['mes'] = prev_mes
                             save_json('prev_month', prev_result)
                             prev_data = prev_result
 
-                    st.success("Reporte publicado exitosamente. Ve a la pestaña **Dashboard** o **Reporte**.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error: {e}")
-                    import traceback
-                    st.code(traceback.format_exc())
-    else:
-        st.info("Sube al menos los dos archivos del **mes actual** para continuar.")
+                        st.success("Datos procesados. Revisa en **Dashboard** y luego **publica** cuando estés listo.")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error: {e}")
+                        import traceback
+                        st.code(traceback.format_exc())
+        else:
+            st.info("Sube al menos los dos archivos del **mes actual** para continuar.")
 
-    # Show current status
-    if data:
-        st.markdown(f"""<div style="margin-top:12px;">
-            <span class="pill pill-green">● Reporte activo: {MESES.get(data.get('mes', mes), '')} {data.get('anio', anio)} — Publicado {data.get('timestamp', '')}</span>
-        </div>""", unsafe_allow_html=True)
+    with col_pub:
+        if data:
+            if st.button("🚀  Publicar Reporte", type="primary", use_container_width=True,
+                         help="Publica los datos para que todos los viewers puedan verlos"):
+                save_json('published_state', {
+                    'is_published': True,
+                    'timestamp': datetime.now().strftime('%d/%m/%Y %H:%M'),
+                    'mes': data.get('mes', now.month),
+                    'anio': data.get('anio', now.year),
+                    'dia_corte': data.get('dia_corte', now.day),
+                })
+                st.success("Reporte publicado. El equipo ya puede verlo.")
+                st.rerun()
+
+    # Quick preview of processed data
+    if data and not is_published:
+        st.markdown("---")
+        st.markdown('<div class="sec">Vista previa de datos procesados</div>', unsafe_allow_html=True)
+        qc1, qc2, qc3, qc4 = st.columns(4)
+        qc1.metric("Total Leads", f"{data['total']:,}")
+        qc2.metric("Red Propia", f"{data['por_dealer']['Propio']:,}")
+        qc3.metric("Terceros", f"{data['por_dealer']['Tercero']:,}")
+        qc4.metric("Modelos", len([m for m in MODELOS_ORDER if data['por_modelo'].get(m, 0) > 0]))
 
 
 # ══════════════════════════════════════════
-# TAB: OBJETIVOS
+# TAB: OBJETIVOS (Admin only)
 # ══════════════════════════════════════════
-with tabs[1]:
-    st.markdown('<p style="color:#64748b;font-size:13px;margin-bottom:16px;">Configura los objetivos mensuales. Se guardan y persisten para el reporte.</p>', unsafe_allow_html=True)
+if tab_obj is not None:
+  with tab_obj:
+    st.markdown('<p style="color:#64748b;font-size:12px;margin-bottom:14px;">Configura los objetivos mensuales. Se guardan automáticamente.</p>', unsafe_allow_html=True)
 
     st.markdown('<div class="cfg-box"><div class="cfg-title">Objetivos Generales</div>', unsafe_allow_html=True)
     g1, g2, g3, g4 = st.columns(4)
@@ -307,18 +414,18 @@ with tabs[1]:
     st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="cfg-box"><div class="cfg-title">Por Ciudad</div>', unsafe_allow_html=True)
-    cc = st.columns(len(CIUDADES_ORDER))
+    cc_cols = st.columns(len(CIUDADES_ORDER))
     oc = {}
     for i, c in enumerate(CIUDADES_ORDER):
-        with cc[i]:
+        with cc_cols[i]:
             oc[c] = st.number_input(CIUDAD_PROVINCIA[c], value=objetivos.get('por_ciudad', DEFAULT_OBJETIVOS_CIUDAD).get(c, 0), step=5, key=f"oc_{c}")
     st.markdown('</div>', unsafe_allow_html=True)
 
     st.markdown('<div class="cfg-box"><div class="cfg-title">Por Modelo</div>', unsafe_allow_html=True)
-    mc = st.columns(len(MODELOS_ORDER))
+    mc_cols = st.columns(len(MODELOS_ORDER))
     om = {}
     for i, m in enumerate(MODELOS_ORDER):
-        with mc[i]:
+        with mc_cols[i]:
             om[m] = st.number_input(m, value=objetivos.get('por_modelo', DEFAULT_OBJETIVOS_MODELO).get(m, 0), step=5, key=f"om_{m}")
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -344,26 +451,38 @@ with tabs[1]:
 # ══════════════════════════════════════════
 # TAB: DASHBOARD
 # ══════════════════════════════════════════
-with tabs[2]:
-    if not data:
-        st.markdown('<div style="text-align:center;padding:60px;color:#94a3b8;"><h3>No hay datos publicados</h3><p>Ve a la pestaña "Cargar Datos" para comenzar.</p></div>', unsafe_allow_html=True)
+with tab_dash:
+    show_dash = (is_admin and data) or (not is_admin and is_published and data)
+
+    if not show_dash:
+        if not is_admin and not is_published:
+            st.markdown("""<div class="no-data">
+                <h3>Reporte aún no disponible</h3>
+                <p style="font-size:13px;">El equipo de marketing está preparando los datos de hoy.<br>Vuelve a consultar en unos minutos.</p>
+            </div>""", unsafe_allow_html=True)
+        else:
+            st.markdown("""<div class="no-data">
+                <h3>No hay datos cargados</h3>
+                <p style="font-size:13px;">Ve a "Cargar Datos" para subir los archivos.</p>
+            </div>""", unsafe_allow_html=True)
     else:
-        mes_nombre = MESES.get(data.get('mes', mes), '')
-        prev_mes_nombre = MESES.get(data.get('mes', mes) - 1, '') if data.get('mes', mes) > 1 else MESES.get(12, '')
+        mes_nombre = MESES.get(data.get('mes', now.month), '')
+        prev_mes_nombre = MESES.get(data.get('mes', now.month) - 1, '') if data.get('mes', now.month) > 1 else MESES.get(12, '')
         dc = data.get('dia_corte', 24)
         anio_d = data.get('anio', now.year)
         avance = data['total']
         obj_t = objetivos.get('total', DEFAULT_OBJETIVO_TOTAL)
         obj_p = objetivos.get('propio', DEFAULT_OBJETIVO_PROPIO)
         obj_te = objetivos.get('tercero', DEFAULT_OBJETIVO_TERCERO)
-        dias_mes = calendar.monthrange(anio_d, data.get('mes', mes))[1]
+        dias_mes = calendar.monthrange(anio_d, data.get('mes', now.month))[1]
         pct_mes = round(dc / dias_mes * 100)
         obj_parcial = int(round(obj_t * pct_mes / 100))
         prev = prev_data if prev_data else DEFAULT_PREV_DATA
 
-        st.markdown(f'<span class="pill pill-green">● Publicado {data.get("timestamp","")}</span> &nbsp; <span style="font-size:11px;color:#94a3b8;">Corte: día {dc} de {mes_nombre} ({pct_mes}% del mes)</span>', unsafe_allow_html=True)
+        pub_ts = published.get('timestamp', data.get('timestamp', ''))
+        st.markdown(f'<span class="pill pill-green">● Publicado {pub_ts}</span> &nbsp; <span style="font-size:10px;color:#94a3b8;">Corte: día {dc} de {mes_nombre} ({pct_mes}% del mes)</span>', unsafe_allow_html=True)
 
-        # KPI
+        # KPI cards
         pt = p(avance, obj_t); pp = p(avance, obj_parcial)
         ppr = p(data['por_dealer']['Propio'], obj_p); ptr = p(data['por_dealer']['Tercero'], obj_te)
 
@@ -399,7 +518,7 @@ with tabs[2]:
             </div>
         </div>""", unsafe_allow_html=True)
 
-        # Fuente + Dealer
+        # Fuente + Comparación
         cf, cd = st.columns([3, 2])
         with cf:
             st.markdown('<div class="sec">Leads por Fuente</div>', unsafe_allow_html=True)
@@ -417,15 +536,15 @@ with tabs[2]:
             st.markdown('<div class="sec">Comparación Mensual</div>', unsafe_allow_html=True)
             ptot = prev.get('total', 0)
             st.markdown(f"""<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-                <div style="background:white;border:1px solid #eef0f4;border-radius:10px;padding:18px;text-align:center;">
-                    <div style="font-size:10px;color:#94a3b8;font-weight:600;">VS MES ANTERIOR</div>
-                    <div style="font-size:28px;font-weight:900;color:{'#0e7a3a' if avance >= ptot else '#c81e1e'};">{vp(avance, ptot)}</div>
-                    <div style="font-size:11px;color:#94a3b8;">{ptot:,} → {avance:,}</div>
+                <div style="background:white;border:1px solid #eef0f4;border-radius:10px;padding:16px;text-align:center;">
+                    <div style="font-size:9px;color:#94a3b8;font-weight:600;">VS MES ANTERIOR</div>
+                    <div style="font-size:26px;font-weight:900;color:{'#0e7a3a' if avance >= ptot else '#c81e1e'};">{vp(avance, ptot)}</div>
+                    <div style="font-size:10px;color:#94a3b8;">{ptot:,} → {avance:,}</div>
                 </div>
-                <div style="background:white;border:1px solid #eef0f4;border-radius:10px;padding:18px;text-align:center;">
-                    <div style="font-size:10px;color:#94a3b8;font-weight:600;">PROPIO vs ANT.</div>
-                    <div style="font-size:28px;font-weight:900;color:{'#0e7a3a' if data['por_dealer']['Propio'] >= prev.get('por_dealer',{}).get('Propio',0) else '#c81e1e'};">{vp(data['por_dealer']['Propio'], prev.get('por_dealer',{}).get('Propio',0))}</div>
-                    <div style="font-size:11px;color:#94a3b8;">{prev.get('por_dealer',{}).get('Propio',0):,} → {data['por_dealer']['Propio']:,}</div>
+                <div style="background:white;border:1px solid #eef0f4;border-radius:10px;padding:16px;text-align:center;">
+                    <div style="font-size:9px;color:#94a3b8;font-weight:600;">PROPIO vs ANT.</div>
+                    <div style="font-size:26px;font-weight:900;color:{'#0e7a3a' if data['por_dealer']['Propio'] >= prev.get('por_dealer',{}).get('Propio',0) else '#c81e1e'};">{vp(data['por_dealer']['Propio'], prev.get('por_dealer',{}).get('Propio',0))}</div>
+                    <div style="font-size:10px;color:#94a3b8;">{prev.get('por_dealer',{}).get('Propio',0):,} → {data['por_dealer']['Propio']:,}</div>
                 </div>
             </div>""", unsafe_allow_html=True)
 
@@ -461,7 +580,7 @@ with tabs[2]:
         with ta:
             rows = []
             for c in CIUDADES_ORDER:
-                r = {'Ciudad': f"{CIUDAD_PROVINCIA[c]}", 'Obj': objetivos.get('por_ciudad', DEFAULT_OBJETIVOS_CIUDAD).get(c, 0)}
+                r = {'Ciudad': CIUDAD_PROVINCIA[c], 'Obj': objetivos.get('por_ciudad', DEFAULT_OBJETIVOS_CIUDAD).get(c, 0)}
                 for m in MODELOS_ORDER:
                     r[m] = data['ciudad_modelo'].get(c, {}).get(m, 0)
                 r['Total'] = sum(r[m] for m in MODELOS_ORDER)
@@ -472,38 +591,55 @@ with tabs[2]:
             rows.append(tot)
             st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
         with tb:
-            prows = []
+            # HTML table with color-coded percentages
+            pch = '<table class="rpt-table"><tr><th>Ciudad</th>'
+            for m in MODELOS_ORDER: pch += f'<th>{m}</th>'
+            pch += '<th>Total</th></tr>'
             for c in CIUDADES_ORDER:
-                r = {'Ciudad': CIUDAD_PROVINCIA[c]}
+                pch += f'<tr><td class="row-label">{CIUDAD_PROVINCIA[c]}</td>'
                 for m in MODELOS_ORDER:
                     v = data['ciudad_modelo'].get(c, {}).get(m, 0)
                     o = objetivos.get('ciudad_modelo', DEFAULT_OBJ_CIUDAD_MODELO).get(c, {}).get(m, 0)
-                    r[m] = f"{p(v, o)}%"
+                    cp = p(v, o)
+                    pch += f'<td class="{rc(cp)}">{cp}%</td>'
                 tv = sum(data['ciudad_modelo'].get(c, {}).get(m, 0) for m in MODELOS_ORDER)
                 to = objetivos.get('por_ciudad', DEFAULT_OBJETIVOS_CIUDAD).get(c, 0)
-                r['Total'] = f"{p(tv, to)}%"
-                prows.append(r)
-            st.dataframe(pd.DataFrame(prows), use_container_width=True, hide_index=True)
+                tcp = p(tv, to)
+                pch += f'<td class="{rc(tcp)}" style="font-weight:800;">{tcp}%</td>'
+                pch += '</tr>'
+            pch += '</table>'
+            st.markdown(pch, unsafe_allow_html=True)
 
-        st.markdown(f'<div class="foot">Suzuki Ecuador — Leads Report — {data.get("timestamp","")}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="foot">Suzuki Ecuador — Leads Report — {pub_ts}</div>', unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════
-# TAB: REPORTE (visual, exportable)
+# TAB: REPORTE
 # ══════════════════════════════════════════
-with tabs[3]:
-    if not data:
-        st.markdown('<div style="text-align:center;padding:60px;color:#94a3b8;"><h3>No hay datos publicados</h3></div>', unsafe_allow_html=True)
+with tab_report:
+    show_rpt = (is_admin and data) or (not is_admin and is_published and data)
+
+    if not show_rpt:
+        if not is_admin and not is_published:
+            st.markdown("""<div class="no-data">
+                <h3>Reporte aún no disponible</h3>
+                <p style="font-size:13px;">El equipo de marketing está preparando los datos de hoy.</p>
+            </div>""", unsafe_allow_html=True)
+        else:
+            st.markdown("""<div class="no-data">
+                <h3>No hay datos cargados</h3>
+                <p style="font-size:13px;">Ve a "Cargar Datos" para subir los archivos.</p>
+            </div>""", unsafe_allow_html=True)
     else:
-        mes_nombre = MESES.get(data.get('mes', mes), '')
-        prev_mes_nombre = MESES.get(data.get('mes', mes) - 1, '') if data.get('mes', mes) > 1 else MESES.get(12, '')
+        mes_nombre = MESES.get(data.get('mes', now.month), '')
+        prev_mes_nombre = MESES.get(data.get('mes', now.month) - 1, '') if data.get('mes', now.month) > 1 else MESES.get(12, '')
         dc = data.get('dia_corte', 24)
         anio_d = data.get('anio', now.year)
         avance = data['total']
         obj_t = objetivos.get('total', DEFAULT_OBJETIVO_TOTAL)
         obj_p = objetivos.get('propio', DEFAULT_OBJETIVO_PROPIO)
         obj_te = objetivos.get('tercero', DEFAULT_OBJETIVO_TERCERO)
-        dias_mes = calendar.monthrange(anio_d, data.get('mes', mes))[1]
+        dias_mes = calendar.monthrange(anio_d, data.get('mes', now.month))[1]
         pct_mes = round(dc / dias_mes * 100)
         obj_parcial = int(round(obj_t * pct_mes / 100))
         prev = prev_data if prev_data else DEFAULT_PREV_DATA
@@ -512,7 +648,7 @@ with tabs[3]:
         pl = f"{dc}-{prev_mes_nombre[:3].lower()}"
 
         # Report header
-        logo_rpt = f'<img src="data:image/png;base64,{logo_b64}" style="height:36px;">' if logo_b64 else '<span style="font-weight:900;color:white;">SUZUKI</span>'
+        logo_rpt = f'<img src="data:image/png;base64,{logo_b64}" style="height:28px;">' if logo_b64 else '<span style="font-weight:900;color:white;">SUZUKI</span>'
         st.markdown(f'''<div class="rpt-header">
             <h2>REPORTE DE GENERACIÓN LEADS {mes_nombre} {anio_d}</h2>
             {logo_rpt}
@@ -535,7 +671,6 @@ with tabs[3]:
             </table>"""
             st.markdown(html_t, unsafe_allow_html=True)
 
-            # Partial
             pct_parc = p(avance, obj_parcial)
             st.markdown(f"""<table class="rpt-table">
                 <tr><th>Obj. {pct_mes}% (día {dc})</th><th>Avance</th><th>%</th></tr>
@@ -646,7 +781,7 @@ with tabs[3]:
                     'ciudad_modelo': objetivos.get('ciudad_modelo', DEFAULT_OBJ_CIUDAD_MODELO),
                     'dia_actual': dc,
                 }
-                pdf = generate_report_pdf(data, obj_for_pdf, data.get('mes', mes), anio_d, prev)
+                pdf = generate_report_pdf(data, obj_for_pdf, data.get('mes', now.month), anio_d, prev)
                 st.download_button("⬇️  Descargar PDF", data=pdf,
                                    file_name=f"SZK_Reporte_{dc}_{mes_nombre}_{anio_d}.pdf",
                                    mime="application/pdf", use_container_width=True)
